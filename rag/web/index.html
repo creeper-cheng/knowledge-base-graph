@@ -1,0 +1,810 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RAG 过程可视化 · A股年报向量库</title>
+<style>
+:root{
+  --purple-1:#667eea; --purple-2:#764ba2; --ink:#4a3f8a; --bg:#f7f6fc;
+  --line:#e6e3f5; --muted:#8b88a8; --ok:#2ea88f; --warn:#d99a2b; --bad:#d9455f;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{
+  font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+  background:var(--bg); color:#2f2b45; overflow:hidden;
+}
+header{
+  background:linear-gradient(135deg,var(--purple-1),var(--purple-2));
+  color:#fff; padding:12px 20px; display:flex; align-items:center; gap:18px;
+  box-shadow:0 4px 18px rgba(102,126,234,.28); position:relative; z-index:5;
+}
+header h1{font-size:16px;margin:0;font-weight:600;letter-spacing:.06em}
+header .stat{font-size:12px;opacity:.92;display:flex;gap:16px;flex-wrap:wrap}
+header .stat b{font-weight:600}
+#llmchip{margin-left:auto;font-size:12px;padding:4px 10px;border-radius:999px;
+  background:rgba(255,255,255,.18);white-space:nowrap}
+#banner{display:none;background:#fff5e0;border-bottom:1px solid #f0d9a8;color:#8a6520;
+  font-size:12.5px;padding:7px 20px}
+#banner.on{display:block}
+main{position:absolute;top:53px;bottom:0;left:0;right:0;display:flex}
+#banner.on ~ main{top:87px}
+#mapwrap{flex:1;position:relative;background:#fff}
+#base,#over{position:absolute;inset:0;width:100%;height:100%;display:block}
+#over{pointer-events:none}
+#right{width:430px;background:#fff;border-left:1px solid var(--line);display:flex;
+  flex-direction:column;overflow:hidden}
+#ask{padding:16px 18px;border-bottom:1px solid var(--line)}
+#ask h2{margin:0 0 10px;font-size:13px;color:var(--ink);letter-spacing:.08em}
+#q{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;
+  font-size:13.5px;font-family:inherit;resize:vertical;min-height:62px;outline:none}
+#q:focus{border-color:var(--purple-1);box-shadow:0 0 0 3px rgba(102,126,234,.14)}
+.row{display:flex;gap:8px;margin-top:10px;align-items:center;flex-wrap:wrap}
+button{border:0;border-radius:9px;padding:9px 16px;font-size:13px;font-family:inherit;
+  cursor:pointer;background:linear-gradient(135deg,var(--purple-1),var(--purple-2));color:#fff}
+button:disabled{opacity:.45;cursor:not-allowed}
+button.ghost{background:#f1effa;color:var(--ink)}
+.ex{font-size:11.5px;color:var(--muted);cursor:pointer;text-decoration:underline dotted}
+#steps{flex:1;overflow-y:auto;padding:14px 18px 40px}
+.card{background:#fbfaff;border:1px solid var(--line);border-radius:12px;padding:13px 14px;
+  margin-bottom:12px;animation:pop .34s cubic-bezier(.2,.9,.3,1.2)}
+@keyframes pop{from{opacity:0;transform:translateY(10px) scale(.985)}to{opacity:1;transform:none}}
+.card h3{margin:0 0 9px;font-size:12.5px;color:var(--ink);letter-spacing:.06em;
+  display:flex;align-items:center;gap:7px}
+.card h3 .n{width:19px;height:19px;border-radius:50%;background:var(--purple-1);color:#fff;
+  font-size:11px;display:grid;place-items:center;flex:0 0 auto}
+.num{font-family:ui-monospace,Consolas,"Courier New",monospace;font-variant-numeric:tabular-nums;
+  font-size:12px;line-height:1.75;word-break:break-all}
+.num .v{display:inline-block;min-width:78px;padding-right:8px}
+.pos{color:var(--bad)} .neg{color:var(--purple-1)}
+#curve{width:100%;height:56px;display:block;margin-top:8px}
+.hint{font-size:11.5px;color:var(--muted);margin-top:8px;line-height:1.6}
+.hit{display:flex;gap:8px;align-items:baseline;font-size:12.2px;padding:5px 0;
+  border-top:1px dashed var(--line)}
+.hit:first-of-type{border-top:0}
+.hit .r{flex:0 0 auto;font-family:ui-monospace,monospace;color:var(--muted)}
+.hit .m{flex:1;min-width:0}
+.hit .m b{font-weight:600}
+.hit .s{font-family:ui-monospace,monospace;color:var(--purple-2);font-weight:600}
+.bar{height:4px;border-radius:2px;background:linear-gradient(90deg,var(--purple-1),var(--purple-2));
+  margin-top:4px;opacity:.55}
+#ans{white-space:pre-wrap;line-height:1.8;font-size:13px}
+.cite{display:inline-block;background:#efedfb;color:var(--purple-2);border-radius:6px;
+  padding:0 5px;margin:0 2px;font-size:11.5px;cursor:pointer;font-family:ui-monospace,monospace}
+.cite:hover{background:var(--purple-2);color:#fff}
+#chips{display:flex;flex-direction:column;gap:6px;margin-top:11px}
+.chip{font-size:11.8px;border:1px solid var(--line);border-radius:8px;padding:7px 9px;
+  cursor:pointer;background:#fff;display:flex;gap:8px;align-items:baseline}
+.chip:hover{border-color:var(--purple-1);background:#faf9ff}
+.chip .s{margin-left:auto;font-family:ui-monospace,monospace;color:var(--purple-2)}
+#detail{position:absolute;top:0;right:0;bottom:0;width:46%;min-width:420px;background:#fff;
+  border-left:1px solid var(--line);box-shadow:-8px 0 34px rgba(74,63,138,.14);
+  transform:translateX(102%);transition:transform .28s cubic-bezier(.2,.8,.3,1);
+  display:flex;flex-direction:column;z-index:20}
+#detail.on{transform:none}
+#detail header{background:#fff;color:#2f2b45;box-shadow:none;border-bottom:1px solid var(--line);
+  padding:14px 18px;display:block}
+#detail .dt{font-size:13.5px;font-weight:600}
+#detail .dm{font-size:11.5px;color:var(--muted);margin-top:5px;line-height:1.7}
+#detail pre{flex:1;overflow:auto;margin:0;padding:16px 20px 40px;font-size:12.6px;
+  line-height:1.85;white-space:pre-wrap;word-break:break-word;
+  font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif}
+#legend{position:absolute;left:14px;bottom:14px;background:rgba(255,255,255,.94);
+  border:1px solid var(--line);border-radius:11px;padding:9px 11px;font-size:11.5px;
+  max-width:270px;box-shadow:0 6px 20px rgba(74,63,138,.10)}
+#legend .lg{display:flex;align-items:center;gap:7px;padding:2px 0;cursor:pointer;user-select:none}
+#legend .lg.off{opacity:.32}
+#legend .sw{width:9px;height:9px;border-radius:2px;flex:0 0 auto}
+#legend .ct{margin-left:auto;color:var(--muted);font-family:ui-monospace,monospace}
+#tabs{display:flex;gap:6px;margin-bottom:7px}
+#tabs span{padding:2px 9px;border-radius:999px;background:#f1effa;cursor:pointer;font-size:11px}
+#tabs span.on{background:var(--purple-1);color:#fff}
+#tooltip{position:absolute;pointer-events:none;background:rgba(47,43,69,.93);color:#fff;
+  font-size:11.5px;padding:5px 8px;border-radius:7px;display:none;z-index:15;max-width:330px;
+  line-height:1.5}
+#toast{position:absolute;left:50%;top:16px;transform:translateX(-50%);background:rgba(47,43,69,.92);
+  color:#fff;font-size:12.5px;padding:8px 16px;border-radius:9px;display:none;z-index:30}
+.modes{display:flex;gap:14px;margin:8px 0 2px;font-size:12px;color:var(--ink)}
+.modes label{display:flex;align-items:center;gap:5px;cursor:pointer}
+.coy{display:flex;gap:8px;align-items:baseline;font-size:11.8px;padding:3px 0;
+  border-top:1px dashed var(--line);animation:pop .25s}
+.coy .cn{flex:0 0 92px;font-weight:600;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.coy .cs{flex:0 0 34px;font-size:11px}
+.coy .ca{flex:1;min-width:0;color:#8b88a8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#agghint{font-size:11.5px;color:var(--muted);line-height:1.7;margin-bottom:6px;word-break:break-all}
+#agglist{max-height:300px;overflow-y:auto}
+.spin{display:inline-block;width:11px;height:11px;border:2px solid rgba(255,255,255,.35);
+  border-top-color:#fff;border-radius:50%;animation:sp .7s linear infinite;vertical-align:-1px}
+@keyframes sp{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<header>
+  <h1>RAG 过程可视化</h1>
+  <div class="stat" id="stat"><span>载入中…</span></div>
+  <div id="llmchip">检查 DeepSeek…</div>
+</header>
+<div id="banner"></div>
+
+<main>
+  <div id="mapwrap">
+    <canvas id="base"></canvas>
+    <canvas id="over"></canvas>
+    <div id="tooltip"></div>
+    <div id="toast"></div>
+    <div id="legend">
+      <div id="tabs">
+        <span data-g="chapter" class="on">按章节</span>
+        <span data-g="company">按公司</span>
+        <span data-g="year">按年份</span>
+      </div>
+      <div id="lgitems"></div>
+    </div>
+  </div>
+
+  <aside id="right">
+    <div id="ask">
+      <h2>提问 → 召回 → 回答</h2>
+      <textarea id="q" placeholder="例：恒逸石化2024年归属于上市公司股东的净利润是多少？"></textarea>
+      <div class="modes">
+        <label><input type="radio" name="mode" value="single" checked> 单文档问答（top-k 检索）</label>
+        <label><input type="radio" name="mode" value="multi"> 跨文档聚合（逐家扫描 32 份）</label>
+      </div>
+      <div class="row">
+        <button id="go">提问</button>
+        <button id="clr" class="ghost">清空</button>
+        <span class="ex" data-q="公司研发投入金额及占营业收入比例">试：研发投入占比</span>
+        <span class="ex" data-q="前五名客户销售额占年度销售总额比例">前五大客户</span>
+        <span class="ex" data-q="哪些公司计提了存货跌价准备，它们之后的产能扩张或收缩计划是什么？">试：跨文档聚合</span>
+      </div>
+      <div class="hint">散点图 = 全部文本块的向量降到二维。点任意一个点看该块原文。</div>
+    </div>
+    <div id="steps"></div>
+  </aside>
+</main>
+
+<aside id="detail">
+  <header>
+    <div class="dt" id="dtitle"></div>
+    <div class="dm" id="dmeta"></div>
+  </header>
+  <pre id="dtext"></pre>
+</aside>
+
+<script>
+"use strict";
+/* ============ 调试用：记录每一段动画的出现时刻，供验收断言 ============ */
+window.__stageLog = [];
+const SLOW = Math.max(1, parseFloat((location.search.match(/slow=([\d.]+)/)||[])[1]) || 1);
+const sleep = ms => new Promise(r => setTimeout(r, ms * SLOW));
+const logStage = s => window.__stageLog.push({stage: s, t: performance.now()});
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s==null?"":s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+function toast(msg, ms=3200){ const t=$("toast"); t.textContent=msg; t.style.display="block";
+  clearTimeout(t._h); t._h=setTimeout(()=>t.style.display="none", ms); }
+
+const PALETTE = ["#667eea","#f0883e","#2ea88f","#d9455f","#3d9bd8","#d99a2b",
+                 "#8e5bd0","#5aa469","#c96fa8","#7a8b99","#b0724a"];
+
+let META=null, N=0, xy=null, grp=null, comp=null, flags=null;
+let groupMode="chapter", hidden=new Set();
+let view={s:1, tx:0, ty:0}, W=0, H=0, DPR=1;
+let grid={cell:256, off:null, items:null};
+let hi={ query:null, nbs:[], dim:0 };      // 高亮状态
+let runToken=0, curAbort=null;
+
+/* ================= 数据加载 ================= */
+async function boot(){
+  const h = await fetch("/api/health").then(r=>r.json());
+  if(!h.index_ready){
+    $("stat").innerHTML = '<span style="color:#ffd9d9">索引未就绪</span>';
+    $("banner").className="on";
+    $("banner").innerHTML = "索引未就绪：" + esc(h.error||"") + "　请先运行 <b>build_index.bat</b>";
+    return;
+  }
+  META = await fetch("/api/meta").then(r=>r.json());
+  N = META.n;
+
+  const buf = await fetch("/api/coords").then(r=>r.arrayBuffer());
+  const dv = new DataView(buf);
+  if(dv.getUint32(0,true) !== 0x52414756) throw new Error("coords 魔数不符");
+  const n = dv.getUint32(4,true);
+  xy = new Float32Array(buf, 32, n*2);
+  grp = new Uint8Array(buf, 32 + n*8, n);
+  comp = new Uint8Array(buf, 32 + n*8 + n, n);
+  flags = new Uint8Array(buf, 32 + n*8 + n*2, n);
+
+  buildGrid();
+  resize(); fit();
+  drawLegend();
+
+  $("stat").innerHTML =
+    `<span>文本块 <b>${N.toLocaleString()}</b></span>` +
+    `<span>年报 <b>${META.n_pdf}</b> 份</span>` +
+    `<span>维度 <b>${META.dim}</b></span>` +
+    `<span>公司 <b>${META.companies.length}</b></span>` +
+    `<span>${esc(META.coords||"")}</span>`;
+
+  if(META.is_sample){
+    $("banner").className="on";
+    $("banner").innerHTML = `⚠ <b>样本模式</b>：当前只向量化了 ${META.n_pdf}/92 份共 ${N.toLocaleString()} 块，`
+      + `全量语料是 34,258 块。全量向量化跑完后重跑一次 <b>build_index.bat</b> 即可升级，代码无需改动。`;
+  }
+
+  if(h.llm_ready) $("llmchip").textContent = "DeepSeek 已配置";
+  else { $("llmchip").textContent = "DeepSeek 未配置"; }
+
+  waitModel(h);
+}
+
+async function waitModel(h){
+  if(h.model_ready){ $("go").disabled=false; return; }
+  $("go").disabled = true;
+  for(let i=0;i<80;i++){
+    await sleep(700);
+    const r = await fetch("/api/health").then(x=>x.json()).catch(()=>null);
+    if(r && r.model_ready){ $("go").disabled=false;
+      $("llmchip").title = "编码模型就绪，加载 "+(r.model_load_s||"?")+"s"; return; }
+    if(r && r.model_error){ toast("编码模型启动失败："+r.model_error, 9000); return; }
+  }
+  toast("编码模型加载超时", 6000);
+}
+
+/* ================= 均匀网格命中检测 ================= */
+function buildGrid(){
+  const C = grid.cell, cnt = new Int32Array(C*C);
+  const cx = i => Math.min(C-1, Math.max(0, Math.floor(xy[i*2]*C)));
+  const cy = i => Math.min(C-1, Math.max(0, Math.floor(xy[i*2+1]*C)));
+  for(let i=0;i<N;i++) cnt[cy(i)*C+cx(i)]++;
+  const off = new Int32Array(C*C+1);
+  for(let i=0;i<C*C;i++) off[i+1]=off[i]+cnt[i];
+  const items = new Int32Array(N), cur = off.slice(0, C*C);
+  for(let i=0;i<N;i++) items[cur[cy(i)*C+cx(i)]++] = i;
+  grid.off = off; grid.items = items;
+}
+function pick(px, py){
+  const C=grid.cell;
+  const dx=(px-view.tx)/(view.s*Math.min(W,H)), dy=(py-view.ty)/(view.s*Math.min(W,H));
+  if(dx<0||dx>1||dy<0||dy>1) return -1;
+  const rad = 7/(view.s*Math.min(W,H));
+  const gx=Math.min(C-1,Math.max(0,Math.floor(dx*C))), gy=Math.min(C-1,Math.max(0,Math.floor(dy*C)));
+  let best=-1, bd=rad*rad;
+  for(let y=gy-1;y<=gy+1;y++) for(let x=gx-1;x<=gx+1;x++){
+    if(x<0||y<0||x>=C||y>=C) continue;
+    const c=y*C+x;
+    for(let p=grid.off[c];p<grid.off[c+1];p++){
+      const i=grid.items[p], ax=xy[i*2]-dx, ay=xy[i*2+1]-dy, d=ax*ax+ay*ay;
+      if(d<bd){bd=d;best=i;}
+    }
+  }
+  return best;
+}
+
+/* ================= 渲染 ================= */
+function resize(){
+  DPR = Math.min(2, window.devicePixelRatio||1);
+  const r = $("mapwrap").getBoundingClientRect();
+  W = r.width; H = r.height;
+  for(const id of ["base","over"]){
+    const c=$(id); c.width=W*DPR; c.height=H*DPR;
+    c.getContext("2d").setTransform(DPR,0,0,DPR,0,0);
+  }
+}
+function fit(){
+  const S=Math.min(W,H);
+  view.s = 1/1.18;
+  view.tx = (W - S*view.s)/2;
+  view.ty = (H - S*view.s)/2;
+  drawBase();
+}
+function sx(x){ return x*Math.min(W,H)*view.s + view.tx; }
+function sy(y){ return y*Math.min(W,H)*view.s + view.ty; }
+
+function colorOf(i){
+  let g=0;
+  if(groupMode==="chapter") g = grp[i] % PALETTE.length;
+  else if(groupMode==="company") g = comp[i] % PALETTE.length;
+  else {
+    const c = META.companies[comp[i]] || "";
+    // 年份从 chunk 元数据里拿不到（省体积），用公司哈希近似；按下标模式禁用即可
+    g = (comp[i]*7) % PALETTE.length;
+  }
+  return PALETTE[g];
+}
+function groupKey(i){
+  if(groupMode==="chapter") return grp[i];
+  if(groupMode==="company") return comp[i];
+  return comp[i]%PALETTE.length;
+}
+
+function drawBase(){
+  const ctx=$("base").getContext("2d");
+  ctx.clearRect(0,0,W,H);
+  if(!xy) return;
+  const S=Math.min(W,H), s=view.s;
+  const G = groupMode==="chapter"?11:(groupMode==="company"?Math.min(256,META.companies.length):16);
+  const buckets = Array.from({length:G},()=>[]);
+  for(let i=0;i<N;i++){ const k=groupKey(i); if(hidden.has(k)) continue; buckets[k%G].push(i); }
+  ctx.fillStyle="#000";
+  for(let g=0;g<G;g++){
+    if(!buckets[g].length) continue;
+    ctx.fillStyle = PALETTE[g%PALETTE.length];
+    for(const i of buckets[g]){
+      const X=xy[i*2]*S*s+view.tx, Y=xy[i*2+1]*S*s+view.ty;
+      if(X<-3||X>W+3||Y<-3||Y>H+3) continue;
+      ctx.fillRect(X,Y,1.9,1.9);
+    }
+  }
+  drawOver();
+}
+
+function drawOver(){
+  const ctx=$("over").getContext("2d");
+  ctx.clearRect(0,0,W,H);
+  if(!xy) return;
+  const S=Math.min(W,H), s=view.s;
+  // 无关点压暗
+  if(hi.query){
+    ctx.fillStyle="rgba(247,246,252,.72)";
+    // 不做逐点压暗（太慢），改用半透明蒙版 + 高亮重绘
+  }
+  // 连线
+  for(const nb of hi.nbs){
+    ctx.beginPath();
+    ctx.moveTo(sx(hi.query[0]), sy(hi.query[1]));
+    ctx.lineTo(sx(nb.xy[0]), sy(nb.xy[1]));
+    ctx.strokeStyle = nb._alpha==null? "rgba(217,69,95,.75)" : `rgba(217,69,95,${nb._alpha})`;
+    ctx.lineWidth = 1.6; ctx.stroke();
+  }
+  // 邻居点
+  for(const nb of hi.nbs){
+    const X=sx(nb.xy[0]), Y=sy(nb.xy[1]);
+    ctx.beginPath(); ctx.arc(X,Y,4.2,0,6.2832);
+    ctx.fillStyle="#d9455f"; ctx.fill();
+    ctx.strokeStyle="#fff"; ctx.lineWidth=1.4; ctx.stroke();
+    if(nb._label){
+      const t="["+nb.rank+"] "+nb.sim.toFixed(3);
+      ctx.font="600 11px ui-monospace,Consolas,monospace";
+      const w=ctx.measureText(t).width+8;
+      ctx.fillStyle="rgba(217,69,95,.92)";
+      ctx.fillRect(X+7,Y-16,w,16);
+      ctx.fillStyle="#fff"; ctx.fillText(t,X+11,Y-4);
+    }
+  }
+  // 查询点
+  if(hi.query){
+    const X=sx(hi.query[0]), Y=sy(hi.query[1]);
+    if(hi.pulse){
+      const k=(performance.now()%1200)/1200;
+      ctx.beginPath(); ctx.arc(X,Y,6+k*22,0,6.2832);
+      ctx.strokeStyle=`rgba(102,126,234,${(1-k)*0.85})`; ctx.lineWidth=2.2; ctx.stroke();
+      requestAnimationFrame(drawOver);
+    }
+    ctx.beginPath(); ctx.arc(X,Y,6.5,0,6.2832);
+    ctx.fillStyle="#667eea"; ctx.fill();
+    ctx.strokeStyle="#fff"; ctx.lineWidth=2.2; ctx.stroke();
+  }
+}
+
+/* ================= 图例 ================= */
+function drawLegend(){
+  const box=$("lgitems"); box.innerHTML="";
+  let labels=[];
+  if(groupMode==="chapter"){
+    labels = META.chapters.map(c=>({k:c.no, name:c.label||("第"+c.no+"节")}));
+  } else if(groupMode==="company"){
+    const cnt={}; for(let i=0;i<N;i++) cnt[comp[i]]=(cnt[comp[i]]||0)+1;
+    labels = Object.keys(cnt).map(k=>({k:+k, name:META.companies[k]}))
+             .sort((a,b)=>b.name.localeCompare(a.name)).slice(0,60);
+  } else {
+    labels = Array.from({length:16},(_,i)=>({k:i,name:"组 "+i}));
+  }
+  const cnt={}; for(let i=0;i<N;i++) cnt[groupKey(i)]=(cnt[groupKey(i)]||0)+1;
+  for(const L of labels){
+    const d=document.createElement("div");
+    d.className="lg"+(hidden.has(L.k)?" off":"");
+    d.innerHTML=`<span class="sw" style="background:${PALETTE[L.k%PALETTE.length]}"></span>`
+      + `<span>${esc(String(L.name).slice(0,16))}</span><span class="ct">${cnt[L.k]||0}</span>`;
+    d.onclick=()=>{ hidden.has(L.k)?hidden.delete(L.k):hidden.add(L.k); drawLegend(); drawBase(); };
+    box.appendChild(d);
+  }
+}
+
+/* ================= 交互 ================= */
+$("mapwrap").addEventListener("wheel", e=>{
+  e.preventDefault();
+  const r=$("mapwrap").getBoundingClientRect();
+  const mx=e.clientX-r.left, my=e.clientY-r.top;
+  const f=Math.exp(-e.deltaY*0.0016);
+  const ns=Math.max(0.85, Math.min(400, view.s*f));
+  const real=ns/view.s;
+  view.tx = mx-(mx-view.tx)*real;
+  view.ty = my-(my-view.ty)*real;
+  view.s = ns;
+  drawBase();
+},{passive:false});
+
+let dragging=null;
+$("mapwrap").addEventListener("mousedown", e=>{ dragging={x:e.clientX,y:e.clientY,tx:view.tx,ty:view.ty,moved:0}; });
+window.addEventListener("mousemove", e=>{
+  const r=$("mapwrap").getBoundingClientRect();
+  if(dragging){
+    const dx=e.clientX-dragging.x, dy=e.clientY-dragging.y;
+    dragging.moved=Math.max(dragging.moved, Math.abs(dx)+Math.abs(dy));
+    view.tx=dragging.tx+dx; view.ty=dragging.ty+dy; drawBase();
+    return;
+  }
+  if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom) return;
+  const i=pick(e.clientX-r.left, e.clientY-r.top);
+  const tt=$("tooltip");
+  if(i<0){ tt.style.display="none"; $("mapwrap").style.cursor="grab"; return; }
+  $("mapwrap").style.cursor="pointer";
+  tt.innerHTML = `<b>${esc(META.companies[comp[i]])}</b>` +
+    `　${esc(META.chapters.find(c=>c.no===grp[i])?META.chapters.find(c=>c.no===grp[i]).label:"")}` +
+    (flags[i]&1? '　[表]':'');
+  tt.style.display="block";
+  tt.style.left=(e.clientX-r.left+14)+"px";
+  tt.style.top=(e.clientY-r.top+14)+"px";
+});
+window.addEventListener("mouseup", e=>{
+  if(!dragging) return;
+  const wasClick = dragging.moved < 5;
+  dragging=null;
+  if(!wasClick) return;
+  const r=$("mapwrap").getBoundingClientRect();
+  if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom) return;
+  const i=pick(e.clientX-r.left, e.clientY-r.top);
+  if(i>=0) openChunk(i);
+});
+
+$("tabs").addEventListener("click", e=>{
+  if(e.target.tagName!=="SPAN") return;
+  [...$("tabs").children].forEach(s=>s.classList.remove("on"));
+  e.target.classList.add("on");
+  groupMode=e.target.dataset.g; hidden.clear(); drawLegend(); drawBase();
+});
+
+window.addEventListener("keydown", e=>{ if(e.key==="Escape") closeDetail(); });
+$("mapwrap").addEventListener("dblclick", fit);
+
+/* ================= 详情抽屉 ================= */
+async function openChunk(row){
+  $("detail").classList.add("on");
+  $("dtitle").textContent="载入中…"; $("dtext").textContent="";
+  try{
+    const c = await fetch("/api/chunk?row="+row).then(r=>r.json());
+    if(c.error){ $("dtitle").textContent="读取失败"; $("dtext").textContent=c.error; return; }
+    $("dtitle").textContent = `${c.company} ${c.report_year}年年度报告 · ${c.chapter}`;
+    $("dmeta").innerHTML = `页码 P${c.page}　字数 ${c.char_len}　`
+      + `<span style="font-family:ui-monospace,monospace">${esc(c.chunk_id)}</span>`;
+    $("dtext").textContent = c.text;
+  }catch(err){ $("dtitle").textContent="读取失败"; $("dtext").textContent=String(err); }
+}
+function closeDetail(){ $("detail").classList.remove("on"); }
+
+/* ================= 提问：四段动画 ================= */
+function card(html, stage){
+  const d=document.createElement("div");
+  d.className="card"; d.innerHTML=html;
+  $("steps").appendChild(d);
+  if(stage) logStage(stage);
+  d.scrollIntoView({block:"nearest", behavior:"smooth"});
+  return d;
+}
+
+async function ask(){
+  const q=$("q").value.trim();
+  if(!q) return;
+  const my=++runToken;
+  $("go").disabled=true; $("go").innerHTML='<span class="spin"></span> 提问中';
+  $("steps").innerHTML=""; window.__stageLog=[];
+  hi={query:null,nbs:[],dim:0}; drawOver();
+
+  let d;
+  try{
+    d = await fetch("/api/retrieve",{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({query:q,k:20})}).then(r=>r.json());
+  }catch(e){ toast("检索失败："+e); $("go").disabled=false; $("go").textContent="提问"; return; }
+  if(d.error){ toast(d.error,7000); $("go").disabled=false; $("go").textContent="提问"; return; }
+  if(my!==runToken) return;
+
+  /* ---- ① 问题 → 向量 ---- */
+  const c1 = card(
+    `<h3><span class="n">1</span>问题 → ${d.dim} 维向量</h3>
+     <div class="num" id="numline"></div>
+     <canvas id="curve" width="760" height="112"></canvas>
+     <div class="hint">L2 范数 <b>${d.norm}</b>　编码耗时 <b>${d.embed_ms} ms</b>
+       （前 8 维逐个显示真实数值，共 ${d.dim} 维）</div>
+     <div class="row"><button class="ghost" id="cpv">复制完整向量</button>
+       <span class="hint">已记录到 <code>window.__stageLog</code>，可与接口返回逐位比对</span></div>`,
+    "①向量");
+  const nl=$("numline");
+  for(let i=0;i<d.vec_preview.length;i++){
+    const v=d.vec_preview[i];
+    const s=document.createElement("span");
+    s.className="v "+(v>=0?"pos":"neg");
+    nl.appendChild(s);
+    const t0=performance.now();
+    await new Promise(res=>{ const tick=()=>{ const k=Math.min(1,(performance.now()-t0)/220);
+      s.textContent=v.toFixed(4); if(k<1) requestAnimationFrame(tick); else res(); }; tick(); });
+    await sleep(40);
+  }
+  const tail=document.createElement("span"); tail.className="hint";
+  tail.textContent=`　… 省略 ${d.dim-d.vec_preview.length} 维`;
+  nl.appendChild(tail);
+  drawCurve(d.vec_curve);
+  $("cpv").onclick=async()=>{ const v=await fetch("/api/vec?qid="+d.qid).then(r=>r.json());
+    await navigator.clipboard.writeText(JSON.stringify(v.vec));
+    toast("已复制 "+v.dim+" 维向量"); };
+  window.__stageLog.push({stage:"①preview", preview:d.vec_preview.slice()});
+
+  await sleep(700);
+
+  /* ---- ② 向量落在散点图哪里 ---- */
+  if(my!==runToken) return;
+  hi.query=d.query_xy; hi.pulse=true; drawOver();
+  centerOn(d.query_xy);
+  card(`<h3><span class="n">2</span>这个向量落在散点图的这里</h3>
+    <div class="hint">坐标 <span style="font-family:ui-monospace,monospace">
+    (${d.query_xy[0].toFixed(4)}, ${d.query_xy[1].toFixed(4)})</span>
+    图中蓝色脉冲点即查询向量。<br>
+    说明：UMAP 是流形映射，外推新点需保留整个 reducer；此处落点取
+    <b>top-${d.neighbors.length} 邻居二维坐标的相似度加权重心</b>，因此它必然落在召回簇中心。</div>`,
+    "②落点");
+  await sleep(600);
+
+  /* ---- ③ 召回邻居 ---- */
+  if(my!==runToken) return;
+  const c3 = card(`<h3><span class="n">3</span>混合召回 ${d.neighbors.length} 个块</h3>
+    <div class="hint" style="margin:0 0 8px">
+      两路各自排名后按 <b>RRF</b> 融合（k=${d.rrf_k}）：
+      <b style="color:#764ba2">向量</b>看语义、<b style="color:#f0883e">BM25</b>看词面。
+      命中的查询词：${(d.bm25_terms||[]).map(t=>`<code>${esc(t)}</code>`).join(' ') || '（无）'}
+      <br>纯向量对"某个数字是多少"这类查询很弱——实测答案块向量排 404 名、BM25 排第 2 名，融合后才进 top-3。
+    </div><div id="hits"></div>`);
+  const box=$("hits");
+  hi.nbs=[];
+  for(const nb of d.neighbors){
+    if(my!==runToken) return;
+    nb._alpha=1; nb._label=true; hi.nbs.push(nb);
+    drawOver();
+    const h=document.createElement("div"); h.className="hit";
+    h.innerHTML=`<span class="r">[${nb.rank}]</span>
+      <span class="m"><b>${esc(nb.company)}</b> ${nb.report_year}　${esc(nb.chapter)}　P${nb.page}
+      <div class="bar" style="width:${Math.max(6,(nb.sim*100)).toFixed(0)}%"></div>
+      <div style="color:#8b88a8;font-size:11.5px;margin-top:3px">${esc(nb.snippet)}…</div>
+      <div style="font-size:11px;color:#8b88a8;margin-top:4px;font-family:ui-monospace,monospace">
+        余弦 <b style="color:#764ba2">${nb.sim.toFixed(4)}</b> <span style="opacity:.7">(#${nb.vrank})</span>
+        &nbsp;·&nbsp; BM25 <b style="color:#f0883e">${nb.bm25.toFixed(1)}</b> <span style="opacity:.7">(#${nb.brank})</span>
+      </div></span>
+      <span class="s" title="RRF 融合得分">${nb.rrf.toFixed(4)}</span>`;
+    h.onclick=()=>openChunk(nb.row);
+    box.appendChild(h);
+    await sleep(130);
+  }
+  hi.pulse=false; drawOver();
+  logStage("③邻居");
+  window.__stageLog.push({stage:"③sims", sims:d.neighbors.map(n=>n.sim)});
+  await sleep(400);
+
+  /* ---- ④ 交给 DeepSeek ---- */
+  if(my!==runToken) return;
+  const c4 = card(`<h3><span class="n">4</span>把这 ${d.neighbors.length} 个块交给 DeepSeek</h3>
+    <div id="ans"><span class="hint">连接中…</span></div><div id="chips"></div>`);
+  logStage("④回答");
+  $("go").innerHTML="生成中…";
+  await streamAnswer(d, $("ans"), $("chips"), my);
+
+  $("go").disabled=false; $("go").textContent="提问";
+}
+
+/* ============ 跨文档聚合（Map-Reduce）============
+   为什么单独一条路径：像「哪些公司计提了存货跌价准备」这种问题要求**遍历全部年报**，
+   而 top-k 检索最多覆盖三五家——把 k 调大也没用，"哪些"本质上是穷举不是排序。
+   所以拆成 map（逐家抽取结构化结论）+ reduce（汇总）。 */
+async function askAggregate(){
+  const q=$("q").value.trim();
+  if(!q) return;
+  const my=++runToken;
+  $("go").disabled=true; $("go").innerHTML='<span class="spin"></span> 逐家扫描中';
+  $("steps").innerHTML=""; window.__stageLog=[];
+  hi={query:null,nbs:[],dim:0}; drawOver();
+
+  const c1=card(`<h3><span class="n">1</span>Map：逐家扫描年报</h3>
+    <div id="agghint">编码问题中…</div><div id="agglist"></div>`);
+  logStage("①聚合开始");
+  const list=$("agglist"), rowEls={};
+  let answer="", cites=[], c2=null;
+
+  curAbort=new AbortController();
+  try{
+    const r=await fetch("/api/aggregate",{method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({query:q,k:6}), signal:curAbort.signal});
+    if(!r.ok){ const j=await r.json().catch(()=>({error:"HTTP "+r.status}));
+      $("agghint").innerHTML=`<span style="color:#d9455f">${esc(j.error||"失败")}</span>`;
+      $("go").disabled=false; $("go").textContent="提问"; return; }
+    const rd=r.body.getReader(), dec=new TextDecoder(); let buf="";
+    while(true){
+      const {done,value}=await rd.read(); if(done) break;
+      buf+=dec.decode(value,{stream:true});
+      const lines=buf.split("\n"); buf=lines.pop();
+      for(const ln of lines){
+        if(!ln.trim()) continue;
+        let o; try{o=JSON.parse(ln);}catch(e){ continue; }
+        if(o.type==="query"){
+          $("agghint").innerHTML=
+            `① 问题 → <b>${o.dim}</b> 维向量　前 8 维 <code>${o.vec_preview.map(x=>x.toFixed(4)).join(' ')}</code>`
+            +`<br>BM25 命中词：<code>${(o.bm25_terms||[]).join(' ')||'（无）'}</code>`
+            +`　共 <b>${o.companies||''}</b> 家待扫描`;
+          window.__stageLog.push({stage:"①preview",preview:o.vec_preview.slice()});
+        } else if(o.type==="start"){
+          $("agghint").innerHTML=`问题 → 向量…　共 <b>${o.companies}</b> 家待扫描`;
+        } else if(o.type==="company"){
+          let el=rowEls[o.company];
+          if(!el){ el=document.createElement("div"); el.className="coy";
+            el.innerHTML=`<span class="cn"></span><span class="cs"></span><span class="ca"></span>`;
+            el.querySelector(".cn").textContent=o.company;
+            list.appendChild(el); rowEls[o.company]=el; }
+          const M={relevant:["命中","#2ea88f"],irrelevant:["无关","#b9b6cc"],
+                   error:["失败","#d9455f"],empty:["无块","#b9b6cc"]};
+          const [txt,col]=M[o.state]||["?","#b9b6cc"];
+          el.querySelector(".cs").textContent=txt;
+          el.querySelector(".cs").style.color=col;
+          el.querySelector(".ca").textContent=(o.answer||o.reason||"").slice(0,80);
+          el.querySelector(".ca").title=o.answer||o.reason||"";
+          list.scrollTop=list.scrollHeight;
+        } else if(o.type==="map_done"){
+          $("agghint").innerHTML+=`<br>② Map 完成：<b>${o.relevant}</b> / ${o.total} 家命中`
+            +(o.failed?`　<span style="color:#d9455f">${o.failed} 家失败</span>`:"");
+          logStage("②map完成");
+        } else if(o.type==="reduce_start"){
+          c2=card(`<h3><span class="n">3</span>Reduce：把 ${o.n} 家的结论交给 DeepSeek 汇总</h3>
+            <div id="aggans"><span class="hint">生成中…</span></div><div id="aggcite"></div>`);
+          logStage("③reduce");
+        } else if(o.type==="token"){
+          answer+=o.t; const a=$("aggans"); if(a) a.innerHTML=renderAns(answer);
+        } else if(o.type==="citations"){ cites=o.items; renderAggCites($("aggcite"),cites); }
+        else if(o.type==="error"){
+          const a=$("aggans");
+          if(a) a.innerHTML+=`<div style="color:#d9455f;margin-top:8px">${esc(o.msg)}</div>`;
+        }
+      }
+      if(my!==runToken){ try{curAbort.abort();}catch(e){} return; }
+    }
+  }catch(e){
+    if(!String(e).includes("abort")) toast("聚合失败："+e, 9000);
+  }finally{ curAbort=null; $("go").disabled=false; $("go").textContent="提问"; }
+}
+
+function renderAggCites(box, items){
+  if(!box) return;
+  box.innerHTML=`<div class="hint" style="margin:10px 0 4px">逐家结论（点击定位到散点图并展开原文）</div>`;
+  for(const it of items){
+    const el=document.createElement("div"); el.className="chip";
+    el.innerHTML=`<span>[${it.no}]</span><span><b>${esc(it.company)}</b> ${it.year}
+      ${esc(it.chapter)}　P${it.page}</span>`;
+    el.onclick=()=>{ const nb={xy:[0,0]}; openChunk(it.row); };
+    box.appendChild(el);
+  }
+}
+
+function centerOn(p){
+  const S=Math.min(W,H);
+  const target=1.9;
+  const s0=view.s, s1=Math.min(12, target);
+  const t0=performance.now(), dur=620*SLOW;
+  const from={tx:view.tx,ty:view.ty,s:view.s};
+  const to={s:s1, tx:W/2-p[0]*S*s1, ty:H/2-p[1]*S*s1};
+  return new Promise(res=>{
+    const step=()=>{
+      const k=Math.min(1,(performance.now()-t0)/dur);
+      const e=1-Math.pow(1-k,3);
+      view.s=from.s+(to.s-from.s)*e;
+      view.tx=from.tx+(to.tx-from.tx)*e;
+      view.ty=from.ty+(to.ty-from.ty)*e;
+      drawBase();
+      if(k<1) requestAnimationFrame(step); else res();
+    };
+    step();
+  });
+}
+
+function drawCurve(vals){
+  const cv=$("curve"); if(!cv) return;
+  const ctx=cv.getContext("2d"), w=cv.width, h=cv.height;
+  ctx.clearRect(0,0,w,h);
+  ctx.fillStyle="#fff"; ctx.fillRect(0,0,w,h);
+  ctx.strokeStyle="#e6e3f5"; ctx.beginPath();
+  ctx.moveTo(0,h/2); ctx.lineTo(w,h/2); ctx.stroke();
+  const bw=w/vals.length;
+  for(let i=0;i<vals.length;i++){
+    const v=Math.max(-0.06,Math.min(0.06,vals[i]))/0.06;
+    const bh=Math.abs(v)*(h/2-2);
+    ctx.fillStyle = v>=0 ? "#667eea" : "#d9455f";
+    ctx.fillRect(i*bw+0.5, v>=0? h/2-bh : h/2, Math.max(1,bw-1.4), bh);
+  }
+}
+
+async function streamAnswer(d, el, chips, my){
+  curAbort = new AbortController();
+  let text="", cites=[];
+  try{
+    const r = await fetch("/api/answer",{method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({qid:d.qid, k:d.neighbors.length}),
+      signal:curAbort.signal});
+    if(!r.ok){ const j=await r.json().catch(()=>({error:"HTTP "+r.status}));
+      el.innerHTML=`<span style="color:#d9455f">${esc(j.error||"请求失败")}</span>`; return; }
+    const rd=r.body.getReader(), dec=new TextDecoder(); let buf="";
+    el.textContent="";
+    while(true){
+      const {done,value}=await rd.read();
+      if(done) break;
+      buf += dec.decode(value,{stream:true});
+      const lines=buf.split("\n"); buf=lines.pop();
+      for(const ln of lines){
+        if(!ln.trim()) continue;
+        let o; try{ o=JSON.parse(ln);}catch(e){ continue; }
+        if(o.type==="token"){
+          text+=o.t; el.innerHTML=renderAns(text);
+          el.scrollIntoView({block:"nearest"});
+        } else if(o.type==="citations"){
+          cites=o.items; renderChips(chips, cites, d);
+        } else if(o.type==="error"){
+          el.innerHTML += `<div style="color:#d9455f;margin-top:8px">${esc(o.msg)}</div>`;
+        }
+      }
+      if(my!==runToken){ try{ curAbort.abort(); }catch(e){} return; }
+    }
+    if(!text) el.innerHTML='<span class="hint">（模型没有返回内容）</span>';
+  }catch(e){
+    if(String(e).includes("abort")) return;
+    el.innerHTML += `<div style="color:#d9455f;margin-top:8px">流中断（${esc(String(e))}），可重试</div>`;
+  }finally{ curAbort=null; }
+}
+
+function renderAns(t){
+  return esc(t).replace(/\[(\d+)\]/g, (m,n)=>`<span class="cite" data-n="${n}">[${n}]</span>`);
+}
+document.addEventListener("click", e=>{
+  const c=e.target.closest(".cite");
+  if(!c) return;
+  const n=+c.dataset.n, nb=hi.nbs.find(x=>x.rank===n);
+  if(nb){ centerOn(nb.xy); openChunk(nb.row); }
+});
+
+function renderChips(box, items, d){
+  box.innerHTML = `<div class="hint" style="margin:10px 0 4px">引用来源（点击定位到散点图上的点并展开原文）</div>`;
+  for(const it of items){
+    const el=document.createElement("div"); el.className="chip";
+    el.innerHTML=`<span>[${it.no}]</span><span><b>${esc(it.company)}</b> ${it.year}
+      ${esc(it.chapter)}　P${it.page}</span><span class="s">${it.sim.toFixed(3)}</span>`;
+    el.onclick=()=>{ centerOn([0,0]).then(()=>{}); const nb=hi.nbs.find(x=>x.rank===it.no);
+      if(nb) centerOn(nb.xy); openChunk(it.row); };
+    box.appendChild(el);
+  }
+}
+
+/* ================= 事件绑定 ================= */
+const isMulti = () => document.querySelector('input[name=mode]:checked').value==="multi";
+$("go").onclick = () => (isMulti() ? askAggregate() : ask());
+$("clr").onclick=()=>{ $("steps").innerHTML=""; $("q").value=""; runToken++;
+  hi={query:null,nbs:[],dim:0}; drawOver(); fit(); window.__stageLog=[]; };
+document.querySelectorAll(".ex").forEach(s=>s.onclick=()=>{ $("q").value=s.dataset.q;
+  (isMulti() ? askAggregate : ask)(); });
+$("q").addEventListener("keydown", e=>{ if(e.key==="Enter"&&(e.ctrlKey||e.metaKey)) ask(); });
+$("detail").addEventListener("click", e=>{ if(e.target.id==="detail") closeDetail(); });
+
+window.addEventListener("resize", ()=>{ resize(); drawBase(); });
+
+boot().catch(e=>{
+  $("stat").innerHTML='<span style="color:#ffd9d9">启动失败</span>';
+  toast("启动失败："+e, 9000);
+  console.error(e);
+});
+</script>
+</body>
+</html>

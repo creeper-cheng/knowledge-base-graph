@@ -1,0 +1,11 @@
+# Windows 批处理必须保持 CRLF —— cmd.exe 按字节偏移解析批处理文件，
+# LF 换行会导致解析错位（症状：双击后窗口一闪就没）。见 rag/README.md。
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# 其余文本按 LF 存
+*.py   text eol=lf
+*.md   text eol=lf
+*.html text eol=lf
+*.json text eol=lf
+*.csv  text eol=lf
